@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: bot-influencer-codigos
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: INITIAL_ADMIN_ID
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
