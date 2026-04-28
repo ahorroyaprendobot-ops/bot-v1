@@ -59,7 +59,11 @@ async def show_category_detail(chat_id: int, message_id: int, category_id: int) 
 
 async def ask_new_category(chat_id: int, user_id: int) -> None:
     await set_state(user_id, "awaiting_category_name")
-    await send_message(chat_id, "Escribe el nombre de la nueva categoría.\n\nUsa /cancelar para salir.")
+    await send_message(
+        chat_id,
+        "Escribe el nombre de la nueva categoría.\n\nUsa /cancelar para salir.",
+        inline_keyboard([[("⬅️ Cancelar", "admin:cancel_input")]]),
+    )
 
 
 async def ask_codes(chat_id: int, user_id: int, category_id: int) -> None:
@@ -71,6 +75,7 @@ async def ask_codes(chat_id: int, user_id: int, category_id: int) -> None:
     await send_message(
         chat_id,
         f"Pega los códigos para <b>{esc(cat['name'])}</b>, uno por línea.\n\nMáximo recomendado: 500 por mensaje.\nUsa /cancelar para salir.",
+        inline_keyboard([[("⬅️ Cancelar", "admin:cancel_input")]]),
     )
 
 
@@ -109,7 +114,16 @@ async def handle_admin_text(chat_id: int, user_id: int, text: str) -> bool:
         return True
 
     if state["state"] == "awaiting_codes":
-        category_id = int(state["data"]["category_id"])
+        raw_category_id = state.get("data", {}).get("category_id")
+        if raw_category_id is None or not str(raw_category_id).isdigit():
+            await clear_state(user_id)
+            await send_message(
+                chat_id,
+                "El flujo de carga de códigos expiró o era inválido. Vuelve a intentarlo desde el panel admin.",
+                back_to_admin(),
+            )
+            return True
+        category_id = int(raw_category_id)
         result = await add_codes(category_id, text)
         await clear_state(user_id)
         limited = "\n⚠️ Se procesaron solo los primeros 500 códigos." if result["limited"] else ""
