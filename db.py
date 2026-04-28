@@ -1,72 +1,46 @@
+from __future__ import annotations
+
 import asyncpg
-from typing import Optional
+from config import settings
 
-_pool: Optional[asyncpg.Pool] = None
+_pool: asyncpg.Pool | None = None
 
 
-async def get_pool():
+async def connect_db() -> None:
     global _pool
     if _pool is None:
-        raise RuntimeError("Database pool not initialized")
-    return _pool
+        _pool = await asyncpg.create_pool(
+            settings.database_url,
+            min_size=1,
+            max_size=5,
+            statement_cache_size=0,  # Necesario para Supabase Pooler / PgBouncer
+        )
 
 
-async def init_db(database_url: str):
+async def close_db() -> None:
     global _pool
-
-    _pool = await asyncpg.create_pool(
-        database_url,
-        min_size=1,
-        max_size=5,
-        statement_cache_size=0,  # 🔥 CLAVE: evita error de Supabase
-    )
-
-
-async def close_db():
-    global _pool
-    if _pool:
+    if _pool is not None:
         await _pool.close()
         _pool = None
 
 
-async def run_migrations():
-    pool = await get_pool()
+def pool() -> asyncpg.Pool:
+    if _pool is None:
+        raise RuntimeError("La base de datos no está conectada")
+    return _pool
 
-    async with pool.acquire() as conn:
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            telegram_id BIGINT PRIMARY KEY,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-        """)
 
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS categories (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-        """)
-
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS promo_codes (
-            id SERIAL PRIMARY KEY,
-            category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
-            code_value TEXT NOT NULL,
-            is_used BOOLEAN DEFAULT FALSE,
-            used_by_user_id BIGINT,
-            used_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT NOW(),
-            UNIQUE(category_id, code_value)
-        );
-        """)
-
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS user_states (
-            user_id BIGINT PRIMARY KEY,
-            state TEXT,
-            data JSONB DEFAULT '{}'::jsonb,
-            updated_at TIMESTAMP DEFAULT NOW()
-        );
-        """)
+async def run_migrations() -> None:
+    with open("migrations/001_initial.sql", "r", encoding="utf-8") as f:
+        sql = f.read()
+    async with pool().acquire() as conn:
+        await conn.execute(sql)
+        if settings.initial_admin_id:
+            await conn.execute(
+                """
+                INSERT INTO admins(telegram_id, name)
+                VALUES($1, 'Admin inicial')
+                ON CONFLICT (telegram_id) DO NOTHING
+                """,
+                settings.initial_admin_id,
+            )

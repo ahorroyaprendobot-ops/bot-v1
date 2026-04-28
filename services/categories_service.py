@@ -3,18 +3,22 @@ from __future__ import annotations
 from db import pool
 
 
-async def create_category(name: str) -> tuple[bool, str]:
+async def create_category(name: str) -> tuple[bool, str, int | None]:
     clean = " ".join(name.strip().split())
     if not clean:
-        return False, "El nombre no puede estar vacío."
+        return False, "El nombre no puede estar vacío.", None
+    if clean.startswith("/"):
+        return False, "Ese texto parece un comando. Escribe solo el nombre de la categoría.", None
     if len(clean) > 50:
-        return False, "El nombre no puede superar 50 caracteres."
+        return False, "El nombre no puede superar 50 caracteres.", None
+
     async with pool().acquire() as conn:
-        try:
-            await conn.execute("INSERT INTO categories(name) VALUES($1)", clean)
-            return True, f"Categoría creada: {clean}"
-        except Exception:
-            return False, "No se ha podido crear. Quizá ya existe una categoría con ese nombre."
+        existing = await conn.fetchrow("SELECT id FROM categories WHERE lower(name)=lower($1)", clean)
+        if existing:
+            return False, f"Ya existe una categoría llamada: {clean}", int(existing["id"])
+
+        row = await conn.fetchrow("INSERT INTO categories(name) VALUES($1) RETURNING id", clean)
+        return True, f"Categoría creada: {clean}", int(row["id"])
 
 
 async def list_categories(active_only: bool = False) -> list[dict]:
