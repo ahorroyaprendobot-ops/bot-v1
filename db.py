@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncpg
 from config import settings
+from pathlib import Path
 
 _pool: asyncpg.Pool | None = None
 
@@ -31,10 +32,13 @@ def pool() -> asyncpg.Pool:
 
 
 async def run_migrations() -> None:
-    with open("migrations/001_initial.sql", "r", encoding="utf-8") as f:
-        sql = f.read()
+    migrations_dir = Path("migrations")
     async with pool().acquire() as conn:
-        await conn.execute(sql)
+        for migration in sorted(migrations_dir.glob("*.sql")):
+            sql = migration.read_text(encoding="utf-8")
+            if sql.strip():
+                await conn.execute(sql)
+
         if settings.initial_admin_id:
             await conn.execute(
                 """

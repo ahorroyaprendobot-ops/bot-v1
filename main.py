@@ -9,19 +9,24 @@ from db import close_db, connect_db, run_migrations
 from handlers.admin import (
     ask_codes,
     ask_new_category,
+    ask_new_subcategory,
     cancel_admin_flow,
     confirm_delete,
+    confirm_delete_subcategory,
     do_delete,
+    do_delete_subcategory,
     handle_admin_text,
     require_admin,
     show_admin_menu,
     show_categories_admin,
     show_category_detail,
+    show_subcategory_detail,
     show_stock,
     toggle_category,
+    toggle_subcategory,
 )
 from handlers.start import show_help, show_start
-from handlers.user import handle_get_code, show_categories
+from handlers.user import handle_get_code, show_categories, show_subcategories
 from services.state_service import clear_state
 from telegram_api import answer_callback, send_message, set_webhook
 
@@ -108,12 +113,10 @@ async def handle_message(message: dict) -> None:
     user_id = int(user.get("id"))
     text = message.get("text") or ""
 
-    # /cancelar tiene prioridad absoluta para desbloquear cualquier flujo.
     if is_command(text, "/cancelar") or text.strip().lower() == "cancelar":
         await handle_admin_text(chat_id, user_id, "/cancelar")
         return
 
-    # /start también limpia estados antiguos para que el admin no se quede atrapado.
     if is_command(text, "/start"):
         await clear_state(user_id)
         await show_start(chat_id, user_id)
@@ -148,12 +151,20 @@ async def handle_callback(callback: dict) -> None:
         await show_categories(chat_id, message_id)
         return
 
-    if data.startswith("user:get:"):
-        category_id = parse_callback_id(data, "user:get:")
+    if data.startswith("user:cat:"):
+        category_id = parse_callback_id(data, "user:cat:")
         if category_id is None:
             await show_start(chat_id, user_id)
             return
-        await handle_get_code(chat_id, user_id, category_id)
+        await show_subcategories(chat_id, message_id, category_id)
+        return
+
+    if data.startswith("user:get:"):
+        subcategory_id = parse_callback_id(data, "user:get:")
+        if subcategory_id is None:
+            await show_start(chat_id, user_id)
+            return
+        await handle_get_code(chat_id, user_id, subcategory_id)
         return
 
     if data.startswith("admin:"):
@@ -183,6 +194,53 @@ async def handle_callback(callback: dict) -> None:
                 await show_admin_menu(chat_id, message_id)
                 return
             await show_category_detail(chat_id, message_id, category_id)
+        elif data.startswith("admin:new_subcategory:"):
+            category_id = parse_callback_id(data, "admin:new_subcategory:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await ask_new_subcategory(chat_id, user_id, category_id)
+        elif data.startswith("admin:subcategory:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:subcategory:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await show_subcategory_detail(chat_id, message_id, subcategory_id)
+        elif data.startswith("admin:pause_sub:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:pause_sub:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await toggle_subcategory(chat_id, message_id, subcategory_id, False)
+        elif data.startswith("admin:activate_sub:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:activate_sub:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await toggle_subcategory(chat_id, message_id, subcategory_id, True)
+        elif data.startswith("admin:add_codes:"):
+            subcategory_id = parse_callback_id(data, "admin:add_codes:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await ask_codes(chat_id, user_id, subcategory_id)
+        elif data.startswith("admin:delete_sub_confirm:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:delete_sub_confirm:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await confirm_delete_subcategory(chat_id, message_id, subcategory_id)
+        elif data.startswith("admin:delete_sub:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:delete_sub:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await do_delete_subcategory(chat_id, message_id, subcategory_id)
         elif data.startswith("admin:pause:"):
             await clear_state(user_id)
             category_id = parse_callback_id(data, "admin:pause:")
@@ -197,12 +255,6 @@ async def handle_callback(callback: dict) -> None:
                 await show_admin_menu(chat_id, message_id)
                 return
             await toggle_category(chat_id, message_id, category_id, True)
-        elif data.startswith("admin:add_codes:"):
-            category_id = parse_callback_id(data, "admin:add_codes:")
-            if category_id is None:
-                await show_admin_menu(chat_id, message_id)
-                return
-            await ask_codes(chat_id, user_id, category_id)
         elif data.startswith("admin:delete_confirm:"):
             await clear_state(user_id)
             category_id = parse_callback_id(data, "admin:delete_confirm:")
