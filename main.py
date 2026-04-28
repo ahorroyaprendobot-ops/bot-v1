@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 
 from config import settings
@@ -19,9 +21,11 @@ from handlers.admin import (
 )
 from handlers.start import show_help, show_start
 from handlers.user import handle_get_code, show_categories
-from telegram_api import answer_callback, set_webhook
+from services.state_service import clear_state
+from telegram_api import answer_callback, send_message, set_webhook
 
 app = FastAPI(title="Bot Influencer Códigos")
+logger = logging.getLogger(__name__)
 
 
 @app.on_event("startup")
@@ -51,10 +55,49 @@ async def telegram_webhook(secret: str, request: Request) -> dict[str, bool]:
 
 
 async def handle_update(update: dict) -> None:
-    if "message" in update:
-        await handle_message(update["message"])
-    elif "callback_query" in update:
-        await handle_callback(update["callback_query"])
+    try:
+        if "message" in update:
+            await handle_message(update["message"])
+        elif "callback_query" in update:
+            await handle_callback(update["callback_query"])
+    except Exception:
+        logger.exception("Error procesando update")
+        message = update.get("message", {})
+        callback = update.get("callback_query", {})
+        chat_id = message.get("chat", {}).get("id")
+        callback_id = callback.get("id")
+        callback_chat_id = callback.get("message", {}).get("chat", {}).get("id")
+        if callback_id:
+            try:
+                await answer_callback(callback_id, "Error temporal. Pulsa /start para reintentar.", show_alert=False)
+            except Exception:
+                logger.exception("No se pudo responder callback de error")
+        if chat_id:
+            try:
+                await send_message(int(chat_id), "Hubo un error temporal. Usa /start para volver al inicio.")
+            except Exception:
+                logger.exception("No se pudo enviar mensaje de recuperación")
+        elif callback_chat_id:
+            try:
+                await send_message(int(callback_chat_id), "Hubo un error temporal. Usa /start para volver al inicio.")
+            except Exception:
+                logger.exception("No se pudo enviar mensaje de recuperación desde callback")
+
+
+def is_command(text: str, command: str) -> bool:
+    clean = text.strip().lower()
+    if clean == command:
+        return True
+    return clean.startswith(f"{command}@")
+
+
+def parse_callback_id(data: str, prefix: str) -> int | None:
+    if not data.startswith(prefix):
+        return None
+    value = data[len(prefix) :].strip()
+    if not value.isdigit():
+        return None
+    return int(value)
 
 
 async def handle_message(message: dict) -> None:
@@ -64,11 +107,11 @@ async def handle_message(message: dict) -> None:
     user_id = int(user.get("id"))
     text = message.get("text", "")
 
-    if text.startswith("/start"):
+    if is_command(text, "/start"):
         await show_start(chat_id, user_id)
         return
 
-    if text.startswith("/cancelar"):
+    if is_command(text, "/cancelar") or text.strip().lower() == "cancelar":
         handled = await handle_admin_text(chat_id, user_id, "/cancelar")
         if not handled:
             await show_start(chat_id, user_id)
@@ -103,7 +146,10 @@ async def handle_callback(callback: dict) -> None:
         return
 
     if data.startswith("user:get:"):
-        category_id = int(data.split(":")[-1])
+        category_id = parse_callback_id(data, "user:get:")
+        if category_id is None:
+            await show_start(chat_id, user_id)
+            return
         await handle_get_code(chat_id, user_id, category_id)
         return
 
@@ -112,6 +158,10 @@ async def handle_callback(callback: dict) -> None:
             return
 
         if data == "admin:menu":
+            await clear_state(user_id)
+            await show_admin_menu(chat_id, message_id)
+        elif data == "admin:cancel_input":
+            await clear_state(user_id)
             await show_admin_menu(chat_id, message_id)
         elif data == "admin:categories":
             await show_categories_admin(chat_id, message_id)
@@ -122,17 +172,41 @@ async def handle_callback(callback: dict) -> None:
         elif data == "admin:stock":
             await show_stock(chat_id, message_id)
         elif data.startswith("admin:category:"):
-            await show_category_detail(chat_id, message_id, int(data.split(":")[-1]))
+            category_id = parse_callback_id(data, "admin:category:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await show_category_detail(chat_id, message_id, category_id)
         elif data.startswith("admin:pause:"):
-            await toggle_category(chat_id, message_id, int(data.split(":")[-1]), False)
+            category_id = parse_callback_id(data, "admin:pause:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await toggle_category(chat_id, message_id, category_id, False)
         elif data.startswith("admin:activate:"):
-            await toggle_category(chat_id, message_id, int(data.split(":")[-1]), True)
+            category_id = parse_callback_id(data, "admin:activate:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await toggle_category(chat_id, message_id, category_id, True)
         elif data.startswith("admin:add_codes:"):
-            await ask_codes(chat_id, user_id, int(data.split(":")[-1]))
+            category_id = parse_callback_id(data, "admin:add_codes:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await ask_codes(chat_id, user_id, category_id)
         elif data.startswith("admin:delete_confirm:"):
-            await confirm_delete(chat_id, message_id, int(data.split(":")[-1]))
+            category_id = parse_callback_id(data, "admin:delete_confirm:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await confirm_delete(chat_id, message_id, category_id)
         elif data.startswith("admin:delete:"):
-            await do_delete(chat_id, message_id, int(data.split(":")[-1]))
+            category_id = parse_callback_id(data, "admin:delete:")
+            if category_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await do_delete(chat_id, message_id, category_id)
         else:
             await show_admin_menu(chat_id, message_id)
         return
