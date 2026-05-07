@@ -10,7 +10,7 @@ from services.subcategories_service import (
     list_subcategories,
     set_subcategory_active,
 )
-from services.codes_service import add_codes, stock_summary
+from services.codes_service import add_codes, delete_codes_by_subcategory, stock_summary
 from services.state_service import clear_state, get_state, set_state
 from telegram_api import edit_message, esc, send_message
 
@@ -97,6 +97,7 @@ async def show_subcategory_detail(chat_id: int, message_id: int | None, subcateg
     else:
         rows.append([("▶️ Activar opción", f"admin:activate_sub:{subcategory_id}")])
     rows.append([("🎟 Añadir códigos", f"admin:add_codes:{subcategory_id}")])
+    rows.append([("🧹 Eliminar códigos", f"admin:delete_codes_confirm:{subcategory_id}")])
     rows.append([("🗑 Eliminar opción", f"admin:delete_sub_confirm:{subcategory_id}")])
     rows.append([("⬅️ Volver a categoría", f"admin:category:{sub['category_id']}")])
 
@@ -351,3 +352,41 @@ async def do_delete_subcategory(chat_id: int, message_id: int, subcategory_id: i
         await edit_message(chat_id, message_id, text, inline_keyboard([[("⬅️ Volver a categoría", f"admin:category:{category_id}")], [("🛠 Panel admin", "admin:menu")]]))
     else:
         await edit_message(chat_id, message_id, text, back_to_admin())
+
+
+async def confirm_delete_codes(chat_id: int, message_id: int, subcategory_id: int) -> None:
+    sub = await get_subcategory(subcategory_id)
+    if not sub:
+        await edit_message(chat_id, message_id, "Opción no encontrada.", back_to_admin())
+        return
+    await edit_message(
+        chat_id,
+        message_id,
+        f"¿Seguro que quieres eliminar todos los códigos de <b>{esc(sub['name'])}</b>?\n\nEsta acción no se puede deshacer.",
+        inline_keyboard(
+            [
+                [("Sí, eliminar códigos", f"admin:delete_codes:{subcategory_id}")],
+                [("Cancelar", f"admin:subcategory:{subcategory_id}")],
+            ]
+        ),
+    )
+
+
+async def do_delete_codes(chat_id: int, message_id: int, subcategory_id: int) -> None:
+    sub = await get_subcategory(subcategory_id)
+    if not sub:
+        await edit_message(chat_id, message_id, "Opción no encontrada.", back_to_admin())
+        return
+
+    deleted = await delete_codes_by_subcategory(subcategory_id)
+    await edit_message(
+        chat_id,
+        message_id,
+        f"🧹 Códigos eliminados: <b>{deleted}</b> en la opción <b>{esc(sub['name'])}</b>.",
+        inline_keyboard(
+            [
+                [("🏷 Volver a opción", f"admin:subcategory:{subcategory_id}")],
+                [("🛠 Panel admin", "admin:menu")],
+            ]
+        ),
+    )

@@ -12,8 +12,10 @@ from handlers.admin import (
     ask_new_subcategory,
     cancel_admin_flow,
     confirm_delete,
+    confirm_delete_codes,
     confirm_delete_subcategory,
     do_delete,
+    do_delete_codes,
     do_delete_subcategory,
     handle_admin_text,
     require_admin,
@@ -227,6 +229,20 @@ async def handle_callback(callback: dict) -> None:
                 await show_admin_menu(chat_id, message_id)
                 return
             await ask_codes(chat_id, user_id, subcategory_id)
+        elif data.startswith("admin:delete_codes_confirm:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:delete_codes_confirm:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await confirm_delete_codes(chat_id, message_id, subcategory_id)
+        elif data.startswith("admin:delete_codes:"):
+            await clear_state(user_id)
+            subcategory_id = parse_callback_id(data, "admin:delete_codes:")
+            if subcategory_id is None:
+                await show_admin_menu(chat_id, message_id)
+                return
+            await do_delete_codes(chat_id, message_id, subcategory_id)
         elif data.startswith("admin:delete_sub_confirm:"):
             await clear_state(user_id)
             subcategory_id = parse_callback_id(data, "admin:delete_sub_confirm:")
