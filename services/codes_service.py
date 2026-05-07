@@ -108,3 +108,19 @@ async def stock_summary() -> list[dict]:
             """
         )
     return [dict(r) for r in rows]
+
+
+async def delete_codes_by_subcategory(subcategory_id: int) -> int:
+    async with pool().acquire() as conn:
+        deleted = await conn.fetchval(
+            """
+            WITH removed AS (
+                DELETE FROM promo_codes
+                WHERE subcategory_id=$1
+                RETURNING 1
+            )
+            SELECT COUNT(*) FROM removed
+            """,
+            subcategory_id,
+        )
+    return int(deleted or 0)
