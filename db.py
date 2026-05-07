@@ -1,21 +1,35 @@
 from __future__ import annotations
 
-import asyncpg
-from config import settings
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import asyncpg
+
+from config import settings
 
 _pool: asyncpg.Pool | None = None
+
+
+def _safe_db_target(database_url: str) -> str:
+    parsed = urlsplit(database_url)
+    host = parsed.hostname or "<sin-host>"
+    database = (parsed.path or "/").lstrip("/") or "postgres"
+    return f"{host}/{database}"
 
 
 async def connect_db() -> None:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(
-            settings.database_url,
-            min_size=1,
-            max_size=5,
-            statement_cache_size=0,  # Necesario para Supabase Pooler / PgBouncer
-        )
+        try:
+            _pool = await asyncpg.create_pool(
+                settings.database_url,
+                min_size=1,
+                max_size=5,
+                statement_cache_size=0,  # Necesario para Supabase Pooler / PgBouncer
+            )
+        except Exception as exc:
+            target = _safe_db_target(settings.database_url)
+            raise RuntimeError(f"No se pudo abrir conexión a la base de datos ({target})") from exc
 
 
 async def close_db() -> None:
