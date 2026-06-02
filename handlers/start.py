@@ -10,9 +10,16 @@ async def show_start(chat_id: int, user_id: int) -> None:
     await clear_state(user_id)
     admin = await is_admin(user_id)
     text = (
-        "Hola 👋\n\n"
-        "Aquí puedes pedir códigos disponibles de las promociones activas.\n\n"
-        "Pulsa <b>🎁 Pedir código</b> para ver las promociones."
+        "🤖 ¡Bienvenido al bot de referidos de AhorroYAprendo!\n\n"
+        "🎁 Códigos y promos activas\n"
+        "💸 Bancos y apps recomendadas\n"
+        "⚡ Actualizado constantemente\n\n"
+        "📣 Canal: https://t.co/J24uZNpdKT\n"
+        "💬 Grupo: https://t.co/bJvMM5GykB\n\n"
+        "🐦 X: https://t.co/e6dtvB3qb1\n\n"
+        "💙 Bot creado por mi buen amigo Ahorrathor:\n"
+        "https://t.co/PFUImjOgHz\n\n"
+        "Selecciona una opción 👇"
     )
     await send_message(chat_id, text, main_menu(admin))
 
