@@ -13,12 +13,15 @@ async def create_subcategory(category_id: int, name: str) -> tuple[bool, str, in
         return False, "El nombre no puede superar 50 caracteres.", None
 
     async with pool().acquire() as conn:
-        category = await conn.fetchrow("SELECT id FROM categories WHERE id=$1", category_id)
+        category = await conn.fetchrow(
+            "SELECT id FROM categories WHERE id=$1 AND deleted_at IS NULL",
+            category_id,
+        )
         if not category:
             return False, "La categoría principal ya no existe.", None
 
         existing = await conn.fetchrow(
-            "SELECT id FROM subcategories WHERE category_id=$1 AND lower(name)=lower($2)",
+            "SELECT id FROM subcategories WHERE category_id=$1 AND lower(name)=lower($2) AND deleted_at IS NULL",
             category_id,
             clean,
         )
@@ -41,7 +44,7 @@ async def list_subcategories(category_id: int, active_only: bool = False) -> lis
             SELECT s.id, s.category_id, s.name, s.is_active, c.name AS category_name, c.is_active AS category_active
             FROM subcategories s
             JOIN categories c ON c.id = s.category_id
-            WHERE s.category_id=$1 {where_active}
+            WHERE s.category_id=$1 AND s.deleted_at IS NULL AND c.deleted_at IS NULL {where_active}
             ORDER BY s.name ASC
             """,
             category_id,
@@ -56,7 +59,7 @@ async def get_subcategory(subcategory_id: int) -> dict | None:
             SELECT s.id, s.category_id, s.name, s.is_active, c.name AS category_name, c.is_active AS category_active, c.empty_message
             FROM subcategories s
             JOIN categories c ON c.id = s.category_id
-            WHERE s.id=$1
+            WHERE s.id=$1 AND s.deleted_at IS NULL AND c.deleted_at IS NULL
             """,
             subcategory_id,
         )
@@ -66,14 +69,32 @@ async def get_subcategory(subcategory_id: int) -> dict | None:
 async def set_subcategory_active(subcategory_id: int, active: bool) -> bool:
     async with pool().acquire() as conn:
         result = await conn.execute(
-            "UPDATE subcategories SET is_active=$2, updated_at=NOW() WHERE id=$1",
+            "UPDATE subcategories SET is_active=$2, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL",
             subcategory_id,
             active,
         )
     return result.endswith("1")
 
 
-async def delete_subcategory(subcategory_id: int) -> bool:
+async def delete_subcategory(subcategory_id: int, admin_user_id: int) -> bool:
     async with pool().acquire() as conn:
-        result = await conn.execute("DELETE FROM subcategories WHERE id=$1", subcategory_id)
+        async with conn.transaction():
+            result = await conn.execute(
+                """
+                UPDATE subcategories
+                SET is_active=FALSE, deleted_at=NOW(), deleted_by_user_id=$2, updated_at=NOW()
+                WHERE id=$1 AND deleted_at IS NULL
+                """,
+                subcategory_id,
+                admin_user_id,
+            )
+            await conn.execute(
+                """
+                UPDATE promo_codes
+                SET deleted_at=NOW(), deleted_by_user_id=$2
+                WHERE subcategory_id=$1 AND deleted_at IS NULL
+                """,
+                subcategory_id,
+                admin_user_id,
+            )
     return result.endswith("1")
