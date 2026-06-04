@@ -242,7 +242,7 @@ async def handle_callback(callback: dict) -> None:
             if subcategory_id is None:
                 await show_admin_menu(chat_id, message_id)
                 return
-            await do_delete_codes(chat_id, message_id, subcategory_id)
+            await do_delete_codes(chat_id, message_id, subcategory_id, user_id)
         elif data.startswith("admin:delete_sub_confirm:"):
             await clear_state(user_id)
             subcategory_id = parse_callback_id(data, "admin:delete_sub_confirm:")

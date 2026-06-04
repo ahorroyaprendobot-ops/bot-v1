@@ -51,7 +51,11 @@ async def add_codes(subcategory_id: int, raw_text: str) -> dict[str, int]:
                 duplicated_db += 1
 
         available = await conn.fetchval(
-            "SELECT COUNT(*) FROM promo_codes WHERE subcategory_id=$1 AND is_used=FALSE",
+            """
+            SELECT COUNT(*)
+            FROM promo_codes
+            WHERE subcategory_id=$1 AND is_used=FALSE AND deleted_at IS NULL
+            """,
             subcategory_id,
         )
 
@@ -74,7 +78,7 @@ async def deliver_code(user_id: int, subcategory_id: int) -> str | None:
                 WHERE id = (
                     SELECT id
                     FROM promo_codes
-                    WHERE subcategory_id=$2 AND is_used=FALSE
+                    WHERE subcategory_id=$2 AND is_used=FALSE AND deleted_at IS NULL
                     ORDER BY id ASC
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
@@ -98,8 +102,9 @@ async def stock_summary() -> list[dict]:
                 s.id AS subcategory_id,
                 s.name AS subcategory_name,
                 s.is_active AS subcategory_active,
-                COUNT(pc.id) FILTER (WHERE pc.is_used=FALSE) AS available,
-                COUNT(pc.id) FILTER (WHERE pc.is_used=TRUE) AS used
+                COUNT(pc.id) FILTER (WHERE pc.is_used=FALSE AND pc.deleted_at IS NULL) AS available,
+                COUNT(pc.id) FILTER (WHERE pc.is_used=TRUE AND pc.deleted_at IS NULL) AS used,
+                COUNT(pc.id) FILTER (WHERE pc.deleted_at IS NOT NULL) AS deleted
             FROM categories c
             LEFT JOIN subcategories s ON s.category_id = c.id
             LEFT JOIN promo_codes pc ON pc.subcategory_id = s.id
@@ -110,17 +115,19 @@ async def stock_summary() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def delete_codes_by_subcategory(subcategory_id: int) -> int:
+async def delete_codes_by_subcategory(subcategory_id: int, admin_user_id: int) -> int:
     async with pool().acquire() as conn:
         deleted = await conn.fetchval(
             """
             WITH removed AS (
-                DELETE FROM promo_codes
-                WHERE subcategory_id=$1
+                UPDATE promo_codes
+                SET deleted_at=NOW(), deleted_by_user_id=$2
+                WHERE subcategory_id=$1 AND deleted_at IS NULL
                 RETURNING 1
             )
             SELECT COUNT(*) FROM removed
             """,
             subcategory_id,
+            admin_user_id,
         )
     return int(deleted or 0)

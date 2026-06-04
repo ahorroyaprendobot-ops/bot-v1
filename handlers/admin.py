@@ -97,7 +97,7 @@ async def show_subcategory_detail(chat_id: int, message_id: int | None, subcateg
     else:
         rows.append([("▶️ Activar opción", f"admin:activate_sub:{subcategory_id}")])
     rows.append([("🎟 Añadir códigos", f"admin:add_codes:{subcategory_id}")])
-    rows.append([("🧹 Eliminar códigos", f"admin:delete_codes_confirm:{subcategory_id}")])
+    rows.append([("🧹 Retirar códigos", f"admin:delete_codes_confirm:{subcategory_id}")])
     rows.append([("🗑 Eliminar opción", f"admin:delete_sub_confirm:{subcategory_id}")])
     rows.append([("⬅️ Volver a categoría", f"admin:category:{sub['category_id']}")])
 
@@ -168,7 +168,9 @@ async def show_stock(chat_id: int, message_id: int | None = None) -> None:
             else:
                 sub_status = "activa" if row["subcategory_active"] else "pausada"
                 lines.append(
-                    f"  • <b>{esc(row['subcategory_name'])}</b>: {row['available']} disponibles / {row['used']} entregados ({sub_status})"
+                    f"  • <b>{esc(row['subcategory_name'])}</b>: "
+                    f"{row['available']} disponibles / {row['used']} entregados / "
+                    f"{row['deleted']} retirados por admin ({sub_status})"
                 )
         text = "\n".join(lines)
     if message_id:
@@ -362,27 +364,29 @@ async def confirm_delete_codes(chat_id: int, message_id: int, subcategory_id: in
     await edit_message(
         chat_id,
         message_id,
-        f"¿Seguro que quieres eliminar todos los códigos de <b>{esc(sub['name'])}</b>?\n\nEsta acción no se puede deshacer.",
+        f"¿Seguro que quieres retirar todos los códigos de <b>{esc(sub['name'])}</b> del stock?\n\n"
+        "Los códigos quedarán persistidos en la base de datos como retirados por admin.",
         inline_keyboard(
             [
-                [("Sí, eliminar códigos", f"admin:delete_codes:{subcategory_id}")],
+                [("Sí, retirar códigos", f"admin:delete_codes:{subcategory_id}")],
                 [("Cancelar", f"admin:subcategory:{subcategory_id}")],
             ]
         ),
     )
 
 
-async def do_delete_codes(chat_id: int, message_id: int, subcategory_id: int) -> None:
+async def do_delete_codes(chat_id: int, message_id: int, subcategory_id: int, admin_user_id: int) -> None:
     sub = await get_subcategory(subcategory_id)
     if not sub:
         await edit_message(chat_id, message_id, "Opción no encontrada.", back_to_admin())
         return
 
-    deleted = await delete_codes_by_subcategory(subcategory_id)
+    deleted = await delete_codes_by_subcategory(subcategory_id, admin_user_id)
     await edit_message(
         chat_id,
         message_id,
-        f"🧹 Códigos eliminados: <b>{deleted}</b> en la opción <b>{esc(sub['name'])}</b>.",
+        f"🧹 Códigos retirados del stock: <b>{deleted}</b> en la opción <b>{esc(sub['name'])}</b>. "
+        "Siguen persistidos en la base de datos.",
         inline_keyboard(
             [
                 [("🏷 Volver a opción", f"admin:subcategory:{subcategory_id}")],
