@@ -110,6 +110,7 @@ async def stock_summary() -> list[dict]:
 
 
 async def delete_codes_by_subcategory(subcategory_id: int, admin_user_id: int) -> int:
+    # Retirar códigos desde admin tampoco borra filas: solo las oculta del stock.
     async with pool().acquire() as conn:
         deleted = await conn.fetchval(
             """

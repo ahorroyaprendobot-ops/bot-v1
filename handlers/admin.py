@@ -359,6 +359,7 @@ async def do_delete_subcategory(chat_id: int, message_id: int, subcategory_id: i
 
 
 async def confirm_delete_codes(chat_id: int, message_id: int, subcategory_id: int) -> None:
+    # La acción de admin es retirar del stock, no borrar registros de la base de datos.
     sub = await get_subcategory(subcategory_id)
     if not sub:
         await edit_message(chat_id, message_id, "Opción no encontrada.", back_to_admin())
