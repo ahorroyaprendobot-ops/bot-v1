@@ -44,5 +44,8 @@ async def set_category_active(category_id: int, active: bool) -> bool:
 
 async def delete_category(category_id: int) -> bool:
     async with pool().acquire() as conn:
-        result = await conn.execute("DELETE FROM categories WHERE id=$1", category_id)
+        result = await conn.execute(
+            "UPDATE categories SET is_active=FALSE, updated_at=NOW() WHERE id=$1",
+            category_id,
+        )
     return result.endswith("1")

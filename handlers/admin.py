@@ -66,7 +66,7 @@ async def show_category_detail(chat_id: int, message_id: int | None, category_id
     for sub in subcategories:
         status = "✅" if sub["is_active"] else "⏸️"
         rows.append([(f"{status} {sub['name']}", f"admin:subcategory:{sub['id']}")])
-    rows.append([("🗑 Eliminar categoría", f"admin:delete_confirm:{category_id}")])
+    rows.append([("🗄 Archivar categoría", f"admin:delete_confirm:{category_id}")])
     rows.append([("⬅️ Categorías", "admin:categories")])
 
     status = "Activa" if cat["is_active"] else "Pausada"
@@ -97,8 +97,8 @@ async def show_subcategory_detail(chat_id: int, message_id: int | None, subcateg
     else:
         rows.append([("▶️ Activar opción", f"admin:activate_sub:{subcategory_id}")])
     rows.append([("🎟 Añadir códigos", f"admin:add_codes:{subcategory_id}")])
-    rows.append([("🧹 Eliminar códigos", f"admin:delete_codes_confirm:{subcategory_id}")])
-    rows.append([("🗑 Eliminar opción", f"admin:delete_sub_confirm:{subcategory_id}")])
+    rows.append([("🧹 Retirar códigos", f"admin:delete_codes_confirm:{subcategory_id}")])
+    rows.append([("🗄 Archivar opción", f"admin:delete_sub_confirm:{subcategory_id}")])
     rows.append([("⬅️ Volver a categoría", f"admin:category:{sub['category_id']}")])
 
     status = "Activa" if sub["is_active"] else "Pausada"
@@ -168,7 +168,9 @@ async def show_stock(chat_id: int, message_id: int | None = None) -> None:
             else:
                 sub_status = "activa" if row["subcategory_active"] else "pausada"
                 lines.append(
-                    f"  • <b>{esc(row['subcategory_name'])}</b>: {row['available']} disponibles / {row['used']} entregados ({sub_status})"
+                    f"  • <b>{esc(row['subcategory_name'])}</b>: "
+                    f"{row['available']} disponibles / {row['used']} entregados / "
+                    f"{row['deleted']} retirados por admin ({sub_status})"
                 )
         text = "\n".join(lines)
     if message_id:
@@ -309,10 +311,11 @@ async def confirm_delete(chat_id: int, message_id: int, category_id: int) -> Non
     await edit_message(
         chat_id,
         message_id,
-        f"¿Seguro que quieres eliminar <b>{esc(cat['name'])}</b>?\n\nEsto borrará también sus opciones y todos sus códigos.",
+        f"¿Seguro que quieres archivar <b>{esc(cat['name'])}</b>?\n\n"
+        "No se borrarán sus opciones ni sus códigos; solo dejará de mostrarse a usuarios.",
         inline_keyboard(
             [
-                [("Sí, eliminar", f"admin:delete:{category_id}")],
+                [("Sí, archivar", f"admin:delete:{category_id}")],
                 [("Cancelar", f"admin:category:{category_id}")],
             ]
         ),
@@ -321,7 +324,7 @@ async def confirm_delete(chat_id: int, message_id: int, category_id: int) -> Non
 
 async def do_delete(chat_id: int, message_id: int, category_id: int) -> None:
     ok = await delete_category(category_id)
-    text = "Categoría eliminada." if ok else "No se ha podido eliminar la categoría."
+    text = "Categoría archivada sin borrar códigos." if ok else "No se ha podido archivar la categoría."
     await edit_message(chat_id, message_id, text, back_to_admin())
 
 
@@ -333,10 +336,11 @@ async def confirm_delete_subcategory(chat_id: int, message_id: int, subcategory_
     await edit_message(
         chat_id,
         message_id,
-        f"¿Seguro que quieres eliminar <b>{esc(sub['name'])}</b>?\n\nEsto borrará también todos sus códigos.",
+        f"¿Seguro que quieres archivar <b>{esc(sub['name'])}</b>?\n\n"
+        "No se borrarán sus códigos; solo dejará de mostrarse a usuarios.",
         inline_keyboard(
             [
-                [("Sí, eliminar", f"admin:delete_sub:{subcategory_id}")],
+                [("Sí, archivar", f"admin:delete_sub:{subcategory_id}")],
                 [("Cancelar", f"admin:subcategory:{subcategory_id}")],
             ]
         ),
@@ -347,7 +351,7 @@ async def do_delete_subcategory(chat_id: int, message_id: int, subcategory_id: i
     sub = await get_subcategory(subcategory_id)
     category_id = int(sub["category_id"]) if sub else None
     ok = await delete_subcategory(subcategory_id)
-    text = "Opción eliminada." if ok else "No se ha podido eliminar la opción."
+    text = "Opción archivada sin borrar códigos." if ok else "No se ha podido archivar la opción."
     if category_id:
         await edit_message(chat_id, message_id, text, inline_keyboard([[("⬅️ Volver a categoría", f"admin:category:{category_id}")], [("🛠 Panel admin", "admin:menu")]]))
     else:
@@ -362,27 +366,29 @@ async def confirm_delete_codes(chat_id: int, message_id: int, subcategory_id: in
     await edit_message(
         chat_id,
         message_id,
-        f"¿Seguro que quieres eliminar todos los códigos de <b>{esc(sub['name'])}</b>?\n\nEsta acción no se puede deshacer.",
+        f"¿Seguro que quieres retirar todos los códigos de <b>{esc(sub['name'])}</b> del stock?\n\n"
+        "Los códigos quedarán persistidos en la base de datos como retirados por admin.",
         inline_keyboard(
             [
-                [("Sí, eliminar códigos", f"admin:delete_codes:{subcategory_id}")],
+                [("Sí, retirar códigos", f"admin:delete_codes:{subcategory_id}")],
                 [("Cancelar", f"admin:subcategory:{subcategory_id}")],
             ]
         ),
     )
 
 
-async def do_delete_codes(chat_id: int, message_id: int, subcategory_id: int) -> None:
+async def do_delete_codes(chat_id: int, message_id: int, subcategory_id: int, admin_user_id: int) -> None:
     sub = await get_subcategory(subcategory_id)
     if not sub:
         await edit_message(chat_id, message_id, "Opción no encontrada.", back_to_admin())
         return
 
-    deleted = await delete_codes_by_subcategory(subcategory_id)
+    deleted = await delete_codes_by_subcategory(subcategory_id, admin_user_id)
     await edit_message(
         chat_id,
         message_id,
-        f"🧹 Códigos eliminados: <b>{deleted}</b> en la opción <b>{esc(sub['name'])}</b>.",
+        f"🧹 Códigos retirados del stock: <b>{deleted}</b> en la opción <b>{esc(sub['name'])}</b>. "
+        "Siguen persistidos en la base de datos.",
         inline_keyboard(
             [
                 [("🏷 Volver a opción", f"admin:subcategory:{subcategory_id}")],

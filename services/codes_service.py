@@ -51,7 +51,11 @@ async def add_codes(subcategory_id: int, raw_text: str) -> dict[str, int]:
                 duplicated_db += 1
 
         available = await conn.fetchval(
-            "SELECT COUNT(*) FROM promo_codes WHERE subcategory_id=$1 AND is_used=FALSE",
+            """
+            SELECT COUNT(*)
+            FROM promo_codes
+            WHERE subcategory_id=$1 AND is_used=FALSE AND deleted_at IS NULL
+            """,
             subcategory_id,
         )
 
@@ -65,25 +69,19 @@ async def add_codes(subcategory_id: int, raw_text: str) -> dict[str, int]:
 
 
 async def deliver_code(user_id: int, subcategory_id: int) -> str | None:
+    # Consultar/entregar un código a un usuario no debe consumirlo ni ocultarlo del stock.
+    # Solo los administradores lo retiran explícitamente con deleted_at/deleted_by_user_id.
     async with pool().acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow(
-                """
-                UPDATE promo_codes
-                SET is_used=TRUE, used_by_user_id=$1, used_at=NOW()
-                WHERE id = (
-                    SELECT id
-                    FROM promo_codes
-                    WHERE subcategory_id=$2 AND is_used=FALSE
-                    ORDER BY id ASC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
-                )
-                RETURNING code_value
-                """,
-                user_id,
-                subcategory_id,
-            )
+        row = await conn.fetchrow(
+            """
+            SELECT code_value
+            FROM promo_codes
+            WHERE subcategory_id=$1 AND is_used=FALSE AND deleted_at IS NULL
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            subcategory_id,
+        )
     return row["code_value"] if row else None
 
 
@@ -98,8 +96,9 @@ async def stock_summary() -> list[dict]:
                 s.id AS subcategory_id,
                 s.name AS subcategory_name,
                 s.is_active AS subcategory_active,
-                COUNT(pc.id) FILTER (WHERE pc.is_used=FALSE) AS available,
-                COUNT(pc.id) FILTER (WHERE pc.is_used=TRUE) AS used
+                COUNT(pc.id) FILTER (WHERE pc.is_used=FALSE AND pc.deleted_at IS NULL) AS available,
+                COUNT(pc.id) FILTER (WHERE pc.is_used=TRUE AND pc.deleted_at IS NULL) AS used,
+                COUNT(pc.id) FILTER (WHERE pc.deleted_at IS NOT NULL) AS deleted
             FROM categories c
             LEFT JOIN subcategories s ON s.category_id = c.id
             LEFT JOIN promo_codes pc ON pc.subcategory_id = s.id
@@ -110,17 +109,19 @@ async def stock_summary() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def delete_codes_by_subcategory(subcategory_id: int) -> int:
+async def delete_codes_by_subcategory(subcategory_id: int, admin_user_id: int) -> int:
     async with pool().acquire() as conn:
         deleted = await conn.fetchval(
             """
             WITH removed AS (
-                DELETE FROM promo_codes
-                WHERE subcategory_id=$1
+                UPDATE promo_codes
+                SET deleted_at=NOW(), deleted_by_user_id=$2
+                WHERE subcategory_id=$1 AND deleted_at IS NULL
                 RETURNING 1
             )
             SELECT COUNT(*) FROM removed
             """,
             subcategory_id,
+            admin_user_id,
         )
     return int(deleted or 0)

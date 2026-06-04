@@ -75,5 +75,8 @@ async def set_subcategory_active(subcategory_id: int, active: bool) -> bool:
 
 async def delete_subcategory(subcategory_id: int) -> bool:
     async with pool().acquire() as conn:
-        result = await conn.execute("DELETE FROM subcategories WHERE id=$1", subcategory_id)
+        result = await conn.execute(
+            "UPDATE subcategories SET is_active=FALSE, updated_at=NOW() WHERE id=$1",
+            subcategory_id,
+        )
     return result.endswith("1")
