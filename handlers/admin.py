@@ -311,19 +311,19 @@ async def confirm_delete(chat_id: int, message_id: int, category_id: int) -> Non
     await edit_message(
         chat_id,
         message_id,
-        f"¿Seguro que quieres eliminar <b>{esc(cat['name'])}</b>?\n\nEsto borrará también sus opciones y todos sus códigos.",
+        f"¿Seguro que quieres eliminar <b>{esc(cat['name'])}</b>?\n\nEsto archivará también sus opciones y retirará sus códigos del stock sin borrarlos de la base de datos.",
         inline_keyboard(
             [
-                [("Sí, eliminar", f"admin:delete:{category_id}")],
+                [("Sí, archivar", f"admin:delete:{category_id}")],
                 [("Cancelar", f"admin:category:{category_id}")],
             ]
         ),
     )
 
 
-async def do_delete(chat_id: int, message_id: int, category_id: int) -> None:
-    ok = await delete_category(category_id)
-    text = "Categoría eliminada." if ok else "No se ha podido eliminar la categoría."
+async def do_delete(chat_id: int, message_id: int, category_id: int, admin_user_id: int) -> None:
+    ok = await delete_category(category_id, admin_user_id)
+    text = "Categoría archivada y códigos retirados del stock." if ok else "No se ha podido archivar la categoría."
     await edit_message(chat_id, message_id, text, back_to_admin())
 
 
@@ -335,21 +335,21 @@ async def confirm_delete_subcategory(chat_id: int, message_id: int, subcategory_
     await edit_message(
         chat_id,
         message_id,
-        f"¿Seguro que quieres eliminar <b>{esc(sub['name'])}</b>?\n\nEsto borrará también todos sus códigos.",
+        f"¿Seguro que quieres eliminar <b>{esc(sub['name'])}</b>?\n\nEsto archivará la opción y retirará sus códigos del stock sin borrarlos de la base de datos.",
         inline_keyboard(
             [
-                [("Sí, eliminar", f"admin:delete_sub:{subcategory_id}")],
+                [("Sí, archivar", f"admin:delete_sub:{subcategory_id}")],
                 [("Cancelar", f"admin:subcategory:{subcategory_id}")],
             ]
         ),
     )
 
 
-async def do_delete_subcategory(chat_id: int, message_id: int, subcategory_id: int) -> None:
+async def do_delete_subcategory(chat_id: int, message_id: int, subcategory_id: int, admin_user_id: int) -> None:
     sub = await get_subcategory(subcategory_id)
     category_id = int(sub["category_id"]) if sub else None
-    ok = await delete_subcategory(subcategory_id)
-    text = "Opción eliminada." if ok else "No se ha podido eliminar la opción."
+    ok = await delete_subcategory(subcategory_id, admin_user_id)
+    text = "Opción archivada y códigos retirados del stock." if ok else "No se ha podido archivar la opción."
     if category_id:
         await edit_message(chat_id, message_id, text, inline_keyboard([[("⬅️ Volver a categoría", f"admin:category:{category_id}")], [("🛠 Panel admin", "admin:menu")]]))
     else:

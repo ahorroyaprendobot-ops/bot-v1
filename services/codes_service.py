@@ -29,7 +29,15 @@ async def add_codes(subcategory_id: int, raw_text: str) -> dict[str, int]:
     added = 0
     duplicated_db = 0
     async with pool().acquire() as conn:
-        subcategory = await conn.fetchrow("SELECT category_id FROM subcategories WHERE id=$1", subcategory_id)
+        subcategory = await conn.fetchrow(
+            """
+            SELECT s.category_id
+            FROM subcategories s
+            JOIN categories c ON c.id = s.category_id
+            WHERE s.id=$1 AND s.deleted_at IS NULL AND c.deleted_at IS NULL
+            """,
+            subcategory_id,
+        )
         if not subcategory:
             return {"added": 0, "duplicated": 0, "empty": empty, "available": 0, "limited": int(limited)}
 
@@ -106,8 +114,9 @@ async def stock_summary() -> list[dict]:
                 COUNT(pc.id) FILTER (WHERE pc.is_used=TRUE AND pc.deleted_at IS NULL) AS used,
                 COUNT(pc.id) FILTER (WHERE pc.deleted_at IS NOT NULL) AS deleted
             FROM categories c
-            LEFT JOIN subcategories s ON s.category_id = c.id
+            LEFT JOIN subcategories s ON s.category_id = c.id AND s.deleted_at IS NULL
             LEFT JOIN promo_codes pc ON pc.subcategory_id = s.id
+            WHERE c.deleted_at IS NULL
             GROUP BY c.id, c.name, c.is_active, s.id, s.name, s.is_active
             ORDER BY c.name ASC, s.name ASC
             """

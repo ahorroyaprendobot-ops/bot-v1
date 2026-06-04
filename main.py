@@ -256,7 +256,7 @@ async def handle_callback(callback: dict) -> None:
             if subcategory_id is None:
                 await show_admin_menu(chat_id, message_id)
                 return
-            await do_delete_subcategory(chat_id, message_id, subcategory_id)
+            await do_delete_subcategory(chat_id, message_id, subcategory_id, user_id)
         elif data.startswith("admin:pause:"):
             await clear_state(user_id)
             category_id = parse_callback_id(data, "admin:pause:")
@@ -284,7 +284,7 @@ async def handle_callback(callback: dict) -> None:
             if category_id is None:
                 await show_admin_menu(chat_id, message_id)
                 return
-            await do_delete(chat_id, message_id, category_id)
+            await do_delete(chat_id, message_id, category_id, user_id)
         else:
             await clear_state(user_id)
             await show_admin_menu(chat_id, message_id)
